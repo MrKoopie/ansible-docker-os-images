@@ -40,18 +40,66 @@ jobs:
             echo "changed=true" >> $GITHUB_OUTPUT
           fi
 
-      - name: Set Ansible version build arg
+      - name: Set Ansible version build arg and tags
         id: ansible
         if: steps.changed.outputs.changed == 'true'
         run: |
           if [ "${{ matrix.ansible_version }}" == "latest" ]; then
             echo "build_arg=ansible" >> $GITHUB_OUTPUT
+            echo "tag_suffix=latest" >> $GITHUB_OUTPUT
           else
             echo "build_arg=ansible-core~=2.16.0" >> $GITHUB_OUTPUT
+            echo "tag_suffix=core-2.16" >> $GITHUB_OUTPUT
           fi
 
-      - name: Test building image
-        if: steps.changed.outputs.changed == 'true'
+          # Set PR-specific tag if this is a pull request
+          if [ "${{ github.event_name }}" == "pull_request" ]; then
+            PR_NUMBER="${{ github.event.pull_request.number }}"
+            echo "docker_tag=pr-${PR_NUMBER}-${{ matrix.ansible_version }}" \
+              >> $GITHUB_OUTPUT
+            echo "should_push=true" >> $GITHUB_OUTPUT
+          else
+            echo "should_push=false" >> $GITHUB_OUTPUT
+          fi
+
+      - uses: docker/setup-qemu-action@v3
+        if: |
+          steps.changed.outputs.changed == 'true' &&
+          steps.ansible.outputs.should_push == 'true'
+
+      - uses: docker/setup-buildx-action@v3
+        if: |
+          steps.changed.outputs.changed == 'true' &&
+          steps.ansible.outputs.should_push == 'true'
+
+      - name: Login to DockerHub
+        if: |
+          steps.changed.outputs.changed == 'true' &&
+          steps.ansible.outputs.should_push == 'true'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push PR image
+        if: |
+          steps.changed.outputs.changed == 'true' &&
+          steps.ansible.outputs.should_push == 'true'
+        uses: docker/build-push-action@v5
+        with:
+          context: ./docker-almalinux8-ansible
+          file: ./docker-almalinux8-ansible/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            mrkoopie/almalinux8-ansible:${{ steps.ansible.outputs.docker_tag }}
+          build-args: |
+            ANSIBLE_VERSION=${{ steps.ansible.outputs.build_arg }}
+
+      - name: Test building image locally
+        if: |
+          steps.changed.outputs.changed == 'true' &&
+          steps.ansible.outputs.should_push == 'false'
         run: |
           docker build \
             --build-arg \
@@ -60,15 +108,21 @@ jobs:
             ./docker-almalinux8-ansible
 
       - name: Run the built image
-        if: steps.changed.outputs.changed == 'true'
+        if: |
+          steps.changed.outputs.changed == 'true' &&
+          steps.ansible.outputs.should_push == 'false'
         run: >-
           docker run --name test-container -d --privileged
           -v /sys/fs/cgroup:/sys/fs/cgroup:rw --cgroupns=host
           docker-ansible
 
       - name: Verify Ansible is accessible in the built image
-        if: steps.changed.outputs.changed == 'true'
-        run: docker exec --tty test-container env TERM=xterm ansible --version
+        if: |
+          steps.changed.outputs.changed == 'true' &&
+          steps.ansible.outputs.should_push == 'false'
+        run: |
+          docker exec --tty test-container \
+            env TERM=xterm ansible --version
 
   # Test AlmaLinux 9 with both Ansible versions
   test-almalinux9:
@@ -100,18 +154,66 @@ jobs:
             echo "changed=true" >> $GITHUB_OUTPUT
           fi
 
-      - name: Set Ansible version build arg
+      - name: Set Ansible version build arg and tags
         id: ansible
         if: steps.changed.outputs.changed == 'true'
         run: |
           if [ "${{ matrix.ansible_version }}" == "latest" ]; then
             echo "build_arg=ansible" >> $GITHUB_OUTPUT
+            echo "tag_suffix=latest" >> $GITHUB_OUTPUT
           else
             echo "build_arg=ansible-core~=2.16.0" >> $GITHUB_OUTPUT
+            echo "tag_suffix=core-2.16" >> $GITHUB_OUTPUT
           fi
 
-      - name: Test building image
-        if: steps.changed.outputs.changed == 'true'
+          # Set PR-specific tag if this is a pull request
+          if [ "${{ github.event_name }}" == "pull_request" ]; then
+            PR_NUMBER="${{ github.event.pull_request.number }}"
+            echo "docker_tag=pr-${PR_NUMBER}-${{ matrix.ansible_version }}" \
+              >> $GITHUB_OUTPUT
+            echo "should_push=true" >> $GITHUB_OUTPUT
+          else
+            echo "should_push=false" >> $GITHUB_OUTPUT
+          fi
+
+      - uses: docker/setup-qemu-action@v3
+        if: |
+          steps.changed.outputs.changed == 'true' &&
+          steps.ansible.outputs.should_push == 'true'
+
+      - uses: docker/setup-buildx-action@v3
+        if: |
+          steps.changed.outputs.changed == 'true' &&
+          steps.ansible.outputs.should_push == 'true'
+
+      - name: Login to DockerHub
+        if: |
+          steps.changed.outputs.changed == 'true' &&
+          steps.ansible.outputs.should_push == 'true'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push PR image
+        if: |
+          steps.changed.outputs.changed == 'true' &&
+          steps.ansible.outputs.should_push == 'true'
+        uses: docker/build-push-action@v5
+        with:
+          context: ./docker-almalinux9-ansible
+          file: ./docker-almalinux9-ansible/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            mrkoopie/almalinux9-ansible:${{ steps.ansible.outputs.docker_tag }}
+          build-args: |
+            ANSIBLE_VERSION=${{ steps.ansible.outputs.build_arg }}
+
+      - name: Test building image locally
+        if: |
+          steps.changed.outputs.changed == 'true' &&
+          steps.ansible.outputs.should_push == 'false'
         run: |
           docker build \
             --build-arg \
@@ -120,15 +222,21 @@ jobs:
             ./docker-almalinux9-ansible
 
       - name: Run the built image
-        if: steps.changed.outputs.changed == 'true'
+        if: |
+          steps.changed.outputs.changed == 'true' &&
+          steps.ansible.outputs.should_push == 'false'
         run: >-
           docker run --name test-container -d --privileged
           -v /sys/fs/cgroup:/sys/fs/cgroup:rw --cgroupns=host
           docker-ansible
 
       - name: Verify Ansible is accessible in the built image
-        if: steps.changed.outputs.changed == 'true'
-        run: docker exec --tty test-container env TERM=xterm ansible --version
+        if: |
+          steps.changed.outputs.changed == 'true' &&
+          steps.ansible.outputs.should_push == 'false'
+        run: |
+          docker exec --tty test-container \
+            env TERM=xterm ansible --version
 
   # Test AlmaLinux 10 with both Ansible versions
   test-almalinux10:
@@ -160,18 +268,66 @@ jobs:
             echo "changed=true" >> $GITHUB_OUTPUT
           fi
 
-      - name: Set Ansible version build arg
+      - name: Set Ansible version build arg and tags
         id: ansible
         if: steps.changed.outputs.changed == 'true'
         run: |
           if [ "${{ matrix.ansible_version }}" == "latest" ]; then
             echo "build_arg=ansible" >> $GITHUB_OUTPUT
+            echo "tag_suffix=latest" >> $GITHUB_OUTPUT
           else
             echo "build_arg=ansible-core~=2.16.0" >> $GITHUB_OUTPUT
+            echo "tag_suffix=core-2.16" >> $GITHUB_OUTPUT
           fi
 
-      - name: Test building image
-        if: steps.changed.outputs.changed == 'true'
+          # Set PR-specific tag if this is a pull request
+          if [ "${{ github.event_name }}" == "pull_request" ]; then
+            PR_NUMBER="${{ github.event.pull_request.number }}"
+            echo "docker_tag=pr-${PR_NUMBER}-${{ matrix.ansible_version }}" \
+              >> $GITHUB_OUTPUT
+            echo "should_push=true" >> $GITHUB_OUTPUT
+          else
+            echo "should_push=false" >> $GITHUB_OUTPUT
+          fi
+
+      - uses: docker/setup-qemu-action@v3
+        if: |
+          steps.changed.outputs.changed == 'true' &&
+          steps.ansible.outputs.should_push == 'true'
+
+      - uses: docker/setup-buildx-action@v3
+        if: |
+          steps.changed.outputs.changed == 'true' &&
+          steps.ansible.outputs.should_push == 'true'
+
+      - name: Login to DockerHub
+        if: |
+          steps.changed.outputs.changed == 'true' &&
+          steps.ansible.outputs.should_push == 'true'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push PR image
+        if: |
+          steps.changed.outputs.changed == 'true' &&
+          steps.ansible.outputs.should_push == 'true'
+        uses: docker/build-push-action@v5
+        with:
+          context: ./docker-almalinux10-ansible
+          file: ./docker-almalinux10-ansible/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            mrkoopie/almalinux10-ansible:${{ steps.ansible.outputs.docker_tag }}
+          build-args: |
+            ANSIBLE_VERSION=${{ steps.ansible.outputs.build_arg }}
+
+      - name: Test building image locally
+        if: |
+          steps.changed.outputs.changed == 'true' &&
+          steps.ansible.outputs.should_push == 'false'
         run: |
           docker build \
             --build-arg \
@@ -180,15 +336,21 @@ jobs:
             ./docker-almalinux10-ansible
 
       - name: Run the built image
-        if: steps.changed.outputs.changed == 'true'
+        if: |
+          steps.changed.outputs.changed == 'true' &&
+          steps.ansible.outputs.should_push == 'false'
         run: >-
           docker run --name test-container -d --privileged
           -v /sys/fs/cgroup:/sys/fs/cgroup:rw --cgroupns=host
           docker-ansible
 
       - name: Verify Ansible is accessible in the built image
-        if: steps.changed.outputs.changed == 'true'
-        run: docker exec --tty test-container env TERM=xterm ansible --version
+        if: |
+          steps.changed.outputs.changed == 'true' &&
+          steps.ansible.outputs.should_push == 'false'
+        run: |
+          docker exec --tty test-container \
+            env TERM=xterm ansible --version
 
   # Release AlmaLinux 8 images to DockerHub
   release-almalinux8:
