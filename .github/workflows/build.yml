@@ -502,14 +502,13 @@ jobs:
 
           # Authenticate with DockerHub and get JWT token
           echo "Authenticating with DockerHub..."
+          JSON_PAYLOAD="{\"username\":\"${DOCKERHUB_USERNAME}\",\"password\":\"${DOCKERHUB_TOKEN}\"}"
           TOKEN_RESPONSE=$(curl -f -s -X POST \
             https://hub.docker.com/v2/users/login/ \
             -H "Content-Type: application/json" \
-            -d "{\"username\":\"${DOCKERHUB_USERNAME}\",
-                 \"password\":\"${DOCKERHUB_TOKEN}\"}")
+            -d "${JSON_PAYLOAD}")
 
-          JWT_TOKEN=$(echo "${TOKEN_RESPONSE}" | \
-            grep -o '"token":"[^"]*' | cut -d'"' -f4)
+          JWT_TOKEN=$(echo "${TOKEN_RESPONSE}" | jq -r '.token // empty')
 
           if [ -z "$JWT_TOKEN" ]; then
             echo "Failed to authenticate with DockerHub"
@@ -535,7 +534,7 @@ jobs:
                 "https://hub.docker.com/v2/repositories/${REPO}/tags/${TAG}/" \
                 -H "Authorization: JWT ${JWT_TOKEN}")
 
-              if [ "$HTTP_CODE" = "204" ] || [ "$HTTP_CODE" = "200" ]; then
+              if [ "$HTTP_CODE" = "204" ]; then
                 echo "  ✓ Successfully deleted ${REPO}:${TAG}"
               elif [ "$HTTP_CODE" = "404" ]; then
                 echo "  ⚠ Tag not found: ${REPO}:${TAG} (may not exist)"
