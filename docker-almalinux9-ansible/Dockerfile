@@ -1,6 +1,7 @@
 FROM almalinux:9
 LABEL maintainer="Daniel Koop"
 ENV container=docker
+# Test trigger for PR image build
 
 # Ansible version can be set at build time
 # Examples: "ansible" for latest, "ansible-core~=2.16.0" for core 2.16
