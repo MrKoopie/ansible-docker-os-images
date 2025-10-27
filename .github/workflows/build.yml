@@ -3,6 +3,7 @@ name: Build
 
 'on':
   pull_request:
+    types: [opened, synchronize, reopened, closed]
   push:
     branches:
       - main
@@ -483,3 +484,71 @@ jobs:
           tags: mrkoopie/almalinux10-ansible:${{ steps.ansible.outputs.tag }}
           build-args: |
             ANSIBLE_VERSION=${{ steps.ansible.outputs.build_arg }}
+
+  # Cleanup PR Docker images when PR is closed
+  cleanup-pr-images:
+    name: Cleanup PR Docker Images
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' && github.event.action == 'closed'
+
+    steps:
+      - name: Delete PR Docker images from DockerHub
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          echo "Cleaning up Docker images for PR #${PR_NUMBER}"
+
+          # Authenticate with DockerHub and get JWT token
+          echo "Authenticating with DockerHub..."
+          TOKEN_RESPONSE=$(curl -f -s -X POST \
+            https://hub.docker.com/v2/users/login/ \
+            -H "Content-Type: application/json" \
+            -d "{\"username\":\"${DOCKERHUB_USERNAME}\",
+                 \"password\":\"${DOCKERHUB_TOKEN}\"}")
+
+          JWT_TOKEN=$(echo "${TOKEN_RESPONSE}" | \
+            grep -o '"token":"[^"]*' | cut -d'"' -f4)
+
+          if [ -z "$JWT_TOKEN" ]; then
+            echo "Failed to authenticate with DockerHub"
+            exit 1
+          fi
+
+          echo "Authentication successful"
+
+          # Delete images for all OS and Ansible version combinations
+          OS_VERSIONS=(8 9 10)
+          ANSIBLE_VERSIONS=(latest core-2.16)
+          FAILED=0
+
+          for OS_VERSION in "${OS_VERSIONS[@]}"; do
+            for ANSIBLE_VERSION in "${ANSIBLE_VERSIONS[@]}"; do
+              REPO="mrkoopie/almalinux${OS_VERSION}-ansible"
+              TAG="pr-${PR_NUMBER}-${ANSIBLE_VERSION}"
+
+              echo "Deleting ${REPO}:${TAG}..."
+
+              HTTP_CODE=$(curl -f -s -o /dev/null -w "%{http_code}" \
+                -X DELETE \
+                "https://hub.docker.com/v2/repositories/${REPO}/tags/${TAG}/" \
+                -H "Authorization: JWT ${JWT_TOKEN}")
+
+              if [ "$HTTP_CODE" = "204" ] || [ "$HTTP_CODE" = "200" ]; then
+                echo "  ✓ Successfully deleted ${REPO}:${TAG}"
+              elif [ "$HTTP_CODE" = "404" ]; then
+                echo "  ⚠ Tag not found: ${REPO}:${TAG} (may not exist)"
+              else
+                echo "  ✗ Failed to delete ${REPO}:${TAG} (HTTP ${HTTP_CODE})"
+                FAILED=1
+              fi
+            done
+          done
+
+          if [ $FAILED -eq 1 ]; then
+            echo "Some deletions failed"
+            exit 1
+          fi
+
+          echo "All PR images cleaned up successfully"
